@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <title>Simulasi Proyektil 2D – Dengan & Tanpa Drag</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <style>
+    body{
+      margin:0;
+      font-family: 'Segoe UI', sans-serif;
+      background: linear-gradient(135deg,#667eea,#764ba2);
+      color:white;
+    }
+    header{
+      text-align:center;
+      padding:16px;
+    }
+    .container{
+      display:grid;
+      grid-template-columns:320px 1fr;
+      gap:16px;
+      padding:16px;
+    }
+    .panel{
+      background:rgba(255,255,255,0.15);
+      backdrop-filter: blur(10px);
+      border-radius:16px;
+      padding:16px;
+    }
+    label{display:block;margin-top:10px;font-size:0.9rem;}
+    input,select,button{
+      width:100%;padding:8px;margin-top:4px;
+      border:none;border-radius:8px;
+    }
+    button{
+      background:linear-gradient(135deg,#ff6a00,#ee0979);
+      color:white;font-weight:bold;cursor:pointer;
+      margin-top:14px;
+    }
+    canvas{
+      width:100%;
+      background: linear-gradient(#87ceeb,#e0f7fa);
+      border-radius:16px;
+      display:block;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Simulasi Proyektil 2D</h1>
+  <p>Perbandingan Tanpa Drag vs Dengan Drag (Hambatan Udara)</p>
+</header>
+
+<div class="container">
+
+  <!-- PANEL KONTROL -->
+  <div class="panel">
+    <label>Mode Simulasi</label>
+    <select id="mode">
+      <option value="nodrag">Tanpa Drag</option>
+      <option value="drag">Dengan Drag</option>
+    </select>
+
+    <label>Kecepatan Awal v₀ (m/s)</label>
+    <input id="v0" type="number" value="28">
+
+    <label>Sudut θ (derajat)</label>
+    <input id="angle" type="number" value="45">
+
+    <label>Massa (kg)</label>
+    <input id="mass" type="number" value="1">
+
+    <label>Gravitasi g (m/s²)</label>
+    <input id="g" type="number" value="9.8">
+
+    <label>Koefisien Drag b</label>
+    <input id="b" type="number" step="0.01" value="0.12">
+
+    <button onclick="launch()">Lempar Bola</button>
+    <p style="font-size:0.8rem">Jejak lintasan akan tersimpan untuk perbandingan</p>
+  </div>
+
+  <!-- CANVAS -->
+  <div class="panel">
+    <canvas id="canvas" width="900" height="480"></canvas>
+  </div>
+
+</div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+const groundY = canvas.height - 60;
+const startX = 120;
+const startY = groundY;
+
+let trajectories = [];
+let animId;
+
+function drawBackground(){
+  // langit
+  ctx.fillStyle = '#87ceeb';
+  ctx.fillRect(0,0,canvas.width,groundY);
+
+  // matahari
+  ctx.beginPath();
+  ctx.arc(canvas.width-80,80,40,0,Math.PI*2);
+  ctx.fillStyle = '#ffeb3b';
+  ctx.fill();
+
+  // awan
+  ctx.fillStyle='rgba(255,255,255,0.8)';
+  ctx.beginPath();
+  ctx.ellipse(200,80,60,25,0,0,Math.PI*2);
+  ctx.ellipse(240,70,50,20,0,0,Math.PI*2);
+  ctx.fill();
+
+  // tanah
+  ctx.fillStyle = '#4caf50';
+  ctx.fillRect(0,groundY,canvas.width,canvas.height-groundY);
+
+  // rumah
+  ctx.fillStyle='#ffcc80';
+  ctx.fillRect(650,groundY-120,160,120);
+  ctx.fillStyle='#8d6e63';
+  ctx.beginPath();
+  ctx.moveTo(650,groundY-120);
+  ctx.lineTo(730,groundY-180);
+  ctx.lineTo(810,groundY-120);
+  ctx.fill();
+}
+
+function drawPerson(throwing=false){
+  ctx.strokeStyle='#000';
+  ctx.lineWidth=3;
+
+  // badan
+  ctx.beginPath();
+  ctx.moveTo(startX,startY-60);
+  ctx.lineTo(startX,startY-20);
+  ctx.stroke();
+
+  // kepala
+  ctx.beginPath();
+  ctx.arc(startX,startY-75,12,0,Math.PI*2);
+  ctx.stroke();
+
+  // tangan
+  ctx.beginPath();
+  ctx.moveTo(startX,startY-50);
+  ctx.lineTo(startX+(throwing?25:15),startY-60);
+  ctx.stroke();
+}
+
+function drawTrails(){
+  trajectories.forEach(t=>{
+    ctx.strokeStyle=t.color;
+    ctx.lineWidth=2;
+    ctx.beginPath();
+    t.points.forEach((p,i)=>{
+      if(i===0) ctx.moveTo(p.x,p.y);
+      else ctx.lineTo(p.x,p.y);
+    });
+    ctx.stroke();
+  });
+}
+
+function launch(){
+  cancelAnimationFrame(animId);
+
+  const v0 = +v0Input.value;
+  const angle = +angleInput.value * Math.PI/180;
+  const m = +massInput.value;
+  const g = +gInput.value;
+  const b = +bInput.value;
+  const mode = document.getElementById('mode').value;
+
+  let vx = v0 * Math.cos(angle);
+  let vy = v0 * Math.sin(angle);
+  let x = startX;
+  let y = startY;
+
+  const dt = 0.02;
+  const color = mode==='drag'?'#ff1744':'#2979ff';
+  const trail = {color,points:[]};
+  trajectories.push(trail);
+  if(trajectories.length>2) trajectories.shift();
+
+  function animate(){
+    drawBackground();
+    drawTrails();
+    drawPerson(true);
+
+    let ax = 0;
+    let ay = -g;
+    if(mode==='drag'){
+      ax = -(b/m)*vx;
+      ay = -g-(b/m)*vy;
+    }
+
+    vx += ax*dt;
+    vy += ay*dt;
+
+    x += vx*dt*5;
+    y -= vy*dt*5;
+
+    trail.points.push({x,y});
+
+    // bola
+    ctx.beginPath();
+    ctx.arc(x,y,8,0,Math.PI*2);
+    ctx.fillStyle=color;
+    ctx.fill();
+
+    if(y < groundY){
+      animId = requestAnimationFrame(animate);
+    }else{
+      drawPerson(false);
+    }
+  }
+
+  animate();
+}
+
+const v0Input = document.getElementById('v0');
+const angleInput = document.getElementById('angle');
+const massInput = document.getElementById('mass');
+const gInput = document.getElementById('g');
+const bInput = document.getElementById('b');
+
+// initial draw
+drawBackground();
+drawPerson(false);
+</script>
+
+</body>
+</html>
